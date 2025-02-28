@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录配置管理</title>
+    <style>
+       body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; /* 更通用的字体 */
+          background-color: #e2e8f0; /* 更柔和的背景色 */
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          margin: 0; /* 移除默认的 body margin */
+        }
+
+        .login-container {
+          background-color: #fff;
+          padding: 30px 40px; /* 更大的内边距 */
+          border-radius: 10px; /* 更大的圆角 */
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15); /* 更明显的阴影 */
+          width: 320px; /* 明确的宽度 */
+          max-width: 90%; /* 响应式最大宽度 */
+        }
+
+        h2 {
+          margin-bottom: 25px; /* 更大的标题下边距 */
+          text-align: center; /* 标题居中 */
+          color: #333;      /* 更深色的标题 */
+        }
+
+        input[type="password"] {
+          width: 100%;
+          padding: 10px 12px; /* 更大的输入框内边距 */
+          margin-bottom: 20px; /* 更大的输入框下边距 */
+          border: 1px solid #ced4da; /* 更柔和的边框颜色 */
+          border-radius: 6px; /* 更小的输入框圆角 */
+          box-sizing: border-box; /* 避免 padding 影响宽度 */
+          font-size: 16px; /* 更大的字体 */
+        }
+        /* 占位符样式 */
+        input[type="password"]::placeholder {
+            color: #777;
+        }
+
+        button {
+          background-color: #0d6efd; /* 更深一点的蓝色 */
+          color: #fff;
+          border: none;
+          padding: 12px 20px; /* 更大的按钮内边距 */
+          border-radius: 6px;
+          cursor: pointer;
+          width: 100%;
+          font-size: 18px; /* 更大的按钮字体 */
+          transition: background-color 0.2s ease-in-out; /* 平滑过渡效果 */
+        }
+
+        button:hover {
+          background-color: #0b5ed7; /* 悬停时更深的蓝色 */
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+    <h2>请输入密码</h2>
+    <form method="POST" action="/config/login">
+        <input type="password" name="password" placeholder="密码" required>
+        <button type="submit">登录</button>
+    </form>
+    </div>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>配置管理</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f9f9f9; margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; word-break: break-all; }
+        th { background: #f2f2f2; }
+        /* 调整表单样式，使其更像图片中的样子 */
+        form { margin-bottom: 10px; } /* 添加下边距 */
+        .form-inline { display: flex; align-items: center; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 6px 8px; /* 调整内边距 */ border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #28a745; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #218838; }
+        .btn-danger { background: #dc3545; color: #fff; } /* 红色按钮 */
+        .btn-danger:hover { background: #c82333; }
+        .btn-toggle { background: #17a2b8; color: #fff; } /* 蓝色按钮 */
+        .btn-toggle:hover { background: #138496; }
+        .actions { display: flex; gap: 8px; margin-top: 15px; margin-bottom: 15px; } /* 调整外边距 */
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>配置管理</h1>
+        <p><strong>API Key:</strong> 与配置密码相同</p>
+
+        <h2>当前 Cookies</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Cookie</th>
+              <th>Cookie 状态</th>
+              <th>模型状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% cookies.forEach((cookie, index) => { %>
+              <% const status = cookieStatuses[index] || { expired: true, rateLimited: false, rateLimitDetails: [] }; %>
+              <% const cookieStateHtml = status.expired
+                                  ? '<span style="color:red;">已过期</span>'
+                                  : '<span style="color:green;">有效</span>'; %>
+              <% const rateLimitHtml = status.expired
+                                  ? '--'
+                                  : status.rateLimitDetails.map(detail => {
+                                      if (detail.error) {
+                                        return `${detail.model}: <span style="color:red;">错误(${detail.error})</span>`;
+                                      } else {
+                                         return detail.remainingQueries > 0
+                                          ? `${detail.model}: <span style="color:green;">有效 (剩余: ${detail.remainingQueries})</span>`
+                                          : `${detail.model}: <span style="color:red;">限额已达</span>`;
+                                      }
+                                    }).join(" | "); %>
+
+              <tr>
+                <td><%= index + 1 %></td>
+                <td><%= truncateCookie(cookie) %></td>
+                <td><%- cookieStateHtml %></td>
+                <td><%- rateLimitHtml %></td>
+                <td>
+                  <form method="POST" action="/config" class="form-inline">
+                    <input type="hidden" name="action" value="delete_one">
+                    <input type="hidden" name="index" value="<%= index %>">
+                    <button type="submit" class="btn-danger">删除</button>
+                  </form>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+
+        <p>Temporary Mode: <strong><%= temporary_mode ? "开启" : "关闭" %></strong></p>
+        <hr>
+
+        <h2>添加 Cookie</h2>
+        <form method="POST" action="/config" class="form-inline">
+            <input type="hidden" name="action" value="add">
+            <input type="text" name="cookie" placeholder="请输入 Cookie" required>
+            <button type="submit">添加</button>
+        </form>
+
+        <hr>
+
+        <h2>全局操作</h2>
+        <div class="actions">
+            <form method="POST" action="/config">
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="btn-danger">删除所有 Cookies</button>
+            </form>
+            <form method="POST" action="/config">
+                <input type="hidden" name="action" value="toggle">
+                <button type="submit" class="btn-toggle">切换 Temporary Mode</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
