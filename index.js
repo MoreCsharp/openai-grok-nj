@@ -27,7 +27,11 @@ async function loadConfig() {
     } catch (error) {
         if (error.code === 'ENOENT') {
             // 首次运行，从环境变量创建配置
-            initialConfig = { cookies: [], temporary_mode: true };
+            initialConfig = { 
+              cookies: [],
+              last_cookie_index: { "grok-2": 0, "grok-3": 0, "grok-3-thinking": 0 },
+              temporary_mode: true
+            };
             await saveConfig(initialConfig);
             return initialConfig;
 
@@ -110,9 +114,7 @@ async function fetchWithTimeout(url, options, timeout = 5000) {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-        console.log(typeof fetch);
-        console.log(typeof path);
-        const response = await fetch(url, { ...options, signal: controller.signal });
+        const response = await fetch(url, {options, signal: controller.signal });
         clearTimeout(timeoutId);
         return response;
     } catch (error) {
@@ -239,11 +241,6 @@ async function handleModels(req, res) {
     res.json({ object: "list", data });
   }
 
-//假设的
-function handleRateLimits(req,res){
-    res.send('handleRateLimits')
-}
-
 /* ========== 消息预处理 ========== */
 function magic(messages) {
     let disableSearch = false;
@@ -263,8 +260,31 @@ function magic(messages) {
     return { disableSearch, forceConcise, messages };
 }
 
+function formatMessage(messages) {
+  let roleMap = { user: "Human", assistant: "Assistant", system: "System" };
+  const roleInfoPattern = /<roleInfo>\s*user:\s*([^\n]*)\s*assistant:\s*([^\n]*)\s*system:\s*([^\n]*)\s*prefix:\s*([^\n]*)\s*<\/roleInfo>\n/;
+  let prefix = false;
+  let firstContent = messages[0].content;
+  let match = firstContent.match(roleInfoPattern);
+  if (match) {
+    roleMap = {
+      user: match[1],
+      assistant: match[2],
+      system: match[3],
+    };
+    prefix = match[4] === "1";
+    messages[0].content = firstContent.replace(roleInfoPattern, "");
+  }
+  let formatted = "";
+  for (const msg of messages) {
+    let role = prefix ? "\b" + roleMap[msg.role] : roleMap[msg.role];
+    formatted += `${role}: ${msg.content}\n`;
+  }
+  return formatted;
+}
+
   async function getNextAccount(model) {
-    let config = await loadConfig;
+    let config = await loadConfig();
     if (!config.cookies || config.cookies.length === 0) {
       throw new Error("没有可用的 cookie，请先通过配置页面添加。");
     }
@@ -585,6 +605,7 @@ app.use((req, res) => {
 const port = process.env.PORT || 3000; // 使用环境变量 PORT 或默认端口 3000
 process.env.PASSWORD = "123456";
 const MODELS = ["grok-2", "grok-3", "grok-3-thinking"];
+const TARGET_URL = "https://grok.com/rest/app-chat/conversations/new";
 const CHECK_URL = "https://grok.com/rest/rate-limits";
 const USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",

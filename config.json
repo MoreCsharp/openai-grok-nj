@@ -2,5 +2,10 @@
   "cookies": [
     "x-anonuserid=e676aa29-f9d7-4833-a28d-6ae319c1d275; x-challenge=N3XMR4H5TlHBux9peHPwOxIz8ipOLZBk8otxqtixLz4EX7sqNRzbm4p6njrnohMP5Psk4jy%2BgMXFmYus9oOf2xMnKQunZC6Yvfj9qGMokKg9RPdfikF29%2FIKUnPHbJmlMiiuVKuLUEkZFG2zQq06hz0Pg9Xhdel%2BtwqbtnYFez9CDzaHmqA%3D; x-signature=HeMY%2B7AO4mafGnFbbQgxGhGLgMl%2FX3aXpbXgYEyOut0r%2BpV%2BuptEzbERGg5lwm7cDFDBNBa3yLp8xi5INvnYYQ%3D%3D; sso-rw=eyJhbGciOiJIUzI1NiJ9.eyJzZXNzaW9uX2lkIjoiNmE0MmE4MmYtZWIzMS00NTE0LWJlZjktNjMwNzlhZWE2NDQxIn0.QiV6BnHmXLpqrSecwvE0mrjEuYATXf_YsSGfuRu2kMA; sso=eyJhbGciOiJIUzI1NiJ9.eyJzZXNzaW9uX2lkIjoiNmE0MmE4MmYtZWIzMS00NTE0LWJlZjktNjMwNzlhZWE2NDQxIn0.QiV6BnHmXLpqrSecwvE0mrjEuYATXf_YsSGfuRu2kMA"
   ],
+  "last_cookie_index": {
+    "grok-2": 0,
+    "grok-3": 0,
+    "grok-3-thinking": 0
+  },
   "temporary_mode": true
 }
