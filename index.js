@@ -8,11 +8,9 @@ app.set('view engine', 'ejs'); // 设置 EJS 为模板引擎
 app.use(session({
     secret: '123456789741852963', // 重要：改成你自己的强密钥！
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     cookie: {
-        secure: true,   // 如果你的网站使用 HTTPS，取消注释这一行
-        httpOnly: true,
-        maxAge: 1000 * 60 * 60 * 24
+        secure: false   // 如果你的网站使用 HTTPS，取消注释这一行
     }
 }));
 
@@ -52,27 +50,25 @@ async function saveConfig(config) {
 
 // requireAuth 中间件
 async function requireAuth(req, res, next) {
-    const config = await loadConfig();
     if (req.baseUrl.startsWith("/config")) {
         if (req.session.loggedIn || !process.env.PASSWORD) {
-            next();
+            return next();
         } else {
-            res.redirect('/config/login');
+            return res.redirect('/config/login');
         }
     } else {
         const auth = req.headers.authorization;
         if (auth && auth.startsWith('Bearer ')) {
             const token = auth.split(' ')[1];
-            // 如果没有设置密码，或者提供了有效的令牌，则允许 API 访问
-            if (!process.env.PASSWORD || (process.env.PASSWORD && await token == process.env.PASSWORD)) {
-                next();
+            if (!process.env.PASSWORD || (process.env.PASSWORD && token === process.env.PASSWORD)) {
+                return next();
             } else {
-                res.status(401).json({ error: "无效的 API 密钥" });
+                return res.status(401).json({ error: "无效的 API 密钥" });
             }
         } else {
-                res.status(401).json({ error: "缺少或无效的 Authorization 标头" });
-            }
+            return res.status(401).json({ error: "缺少或无效的 Authorization 标头" });
         }
+    }
 }
 
 function loginPage(req, res) {
@@ -80,23 +76,17 @@ function loginPage(req, res) {
 }
 
 async function handleLogin(req, res) {
-    const { password } = req.body; // 获取密码, 可能为空
-    const config = await loadConfig();
-
-    // 如果没有设置密码，则直接允许登录 (不需要检查密码)
+    const { password } = req.body;
     if (!process.env.PASSWORD) {
         req.session.loggedIn = true;
-        res.redirect('/config');
-        return; // 提前返回，避免执行下面的密码检查
+        return res.redirect('/config');
     }
 
-    // 如果设置了密码，则进行密码验证
-    if (process.env.PASSWORD && process.env.PASSWORD == password) {
+    if (process.env.PASSWORD == password) {
         req.session.loggedIn = true;
-        res.redirect('/config');
+        return res.redirect('/config');
     } else {
-        // 密码错误，或者提供了密码但没有设置密码
-        res.render('login', { error: '密码错误' });
+        return res.render('login', { error: '密码错误' });
     }
 }
 
@@ -254,9 +244,320 @@ function handleRateLimits(req,res){
     res.send('handleRateLimits')
 }
 
-function handleChatCompletions(req,res){
-    res.send('handleChatCompletions')
+/* ========== 消息预处理 ========== */
+function magic(messages) {
+    let disableSearch = false;
+    let forceConcise = false;
+    if (messages && messages.length > 0) {
+      let first = messages[0].content;
+      if (first.includes("<|disableSearch|>")) {
+        disableSearch = true;
+        first = first.replace(/<\|disableSearch\|>/g, "");
+      }
+      if (first.includes("<|forceConcise|>")) {
+        forceConcise = true;
+        first = first.replace(/<\|forceConcise\|>/g, "");
+      }
+      messages[0].content = first;
+    }
+    return { disableSearch, forceConcise, messages };
 }
+
+  async function getNextAccount(model) {
+    let config = await loadConfig;
+    if (!config.cookies || config.cookies.length === 0) {
+      throw new Error("没有可用的 cookie，请先通过配置页面添加。");
+    }
+    const num = config.cookies.length;
+    const current = ((config.last_cookie_index[model] || 0) + 1) % num;
+    config.last_cookie_index[model] = current;
+  
+    await saveConfig(config);
+    return config.cookies[current];
+}
+
+async function handleRateLimits(req, res) {
+    try {
+      const reqJson = req.body; // 在 Express 中使用 req.body 获取 JSON 数据
+      const model = reqJson.model;
+      const isReasoning = !!reqJson.isReasoning;
+      
+      if (!MODELS.includes(model)) {
+        return res.status(500).json({ error: "模型不可用" });
+      }
+      
+      const result = await checkRateLimit(model, isReasoning);
+      return res.json(result);
+  
+    } catch (e) {
+      console.error("检查调用频率出错:", e);
+      return res.status(500).json({ error: e.toString() });
+    }
+}
+
+async function checkRateLimit(model, isReasoning) {
+    let cookie;
+    try {
+      cookie = await getNextAccount(model);
+    } catch (e) {
+      console.error("获取账户时出错:", e);
+      return { error: e.toString(), status: 500 };
+    }
+  
+    const headers = getCommonHeaders(cookie);
+    const payload = {
+      requestKind: isReasoning ? "REASONING" : "DEFAULT",
+      modelName: model,
+    };
+  
+    try {
+      const response = await fetchWithTimeout(CHECK_URL, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+  
+      if (!response.ok) {
+        throw new Error("调用频率检查失败");
+      }
+  
+      const data = await response.json();
+      return data; // 返回 data 以便在 Express 处理程序中使用
+  
+    } catch (e) {
+      console.error("调用频率检查异常:", e);
+      return { error: e.toString(), status: 500 };
+    }
+}
+
+//访问
+async function handleChatCompletions(req, res) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: "缺少或无效的授权头部" });
+    }
+    const token = authHeader.split(' ')[1];
+    if (token !== process.env.PASSWORD) {
+      return res.status(401).json({ error: "无效的API密钥" });
+    }
+    try {
+      const { stream, messages, model } = req.body;
+      if (!MODELS.includes(model)) {
+        return res.status(500).json({ error: "模型不可用" });
+      }
+      if (!messages) {
+        return res.status(400).json({ error: "必须提供消息" });
+      }
+      const { disableSearch, forceConcise, messages: newMessages } = magic(messages);
+      const formattedMessage = formatMessage(newMessages);
+      const isReasoning = model.length > 6;
+      const modelShortened = model.substring(0, 6);
+      if (stream) {
+        return await sendMessageStream(formattedMessage, modelShortened, disableSearch, forceConcise, isReasoning, res);
+      } else {
+        return await sendMessageNonStream(formattedMessage, modelShortened, disableSearch, forceConcise, isReasoning, res);
+      }
+    } catch (e) {
+      console.error("处理chat completions时出错:", e);
+      return res.status(500).json({ error: e.toString() });
+    }
+}
+
+// Stream和非Stream消息发送的实现
+async function sendMessageStream(message, model, disableSearch, forceConcise, isReasoning, res) {
+    let cookie;
+    try {
+      cookie = await getNextAccount(model);
+    } catch (e) {
+      return res.status(500).json({ error: e.toString() });
+    }
+  
+    const headers = getCommonHeaders(cookie);
+    const config = await loadConfig();
+    const payload = {
+      temporary: config.temporary_mode,
+      modelName: model,
+      message,
+      fileAttachments: [],
+      imageAttachments: [],
+      disableSearch,
+      enableImageGeneration: false,
+      returnImageBytes: false,
+      returnRawGrokInXaiRequest: false,
+      enableImageStreaming: true,
+      imageGenerationCount: 2,
+      forceConcise,
+      toolOverrides: {},
+      enableSideBySide: true,
+      isPreset: false,
+      sendFinalMetadata: true,
+      customInstructions: "",
+      deepsearchPreset: "",
+      isReasoning
+    };
+    const init = {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    };
+  
+    try {
+      const response = await fetchWithTimeout(TARGET_URL, init);
+      if (!response.ok) {
+        return res.status(500).json({ error: "发送消息失败" });
+      }
+  
+      // 使用Node.js的流来处理
+      const reader = response.body.getReader();
+      res.setHeader('Content-Type', 'text/event-stream');
+  
+      let buffer = '';
+      let thinking = 2;
+  
+      async function pushStreamData() {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+  
+          buffer += new TextDecoder().decode(value, { stream: true });
+          const lines = buffer.split("\n").filter(line => line.trim() !== "");
+          buffer = lines.pop();
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const data = JSON.parse(trimmed);
+              if (!data?.result?.response || typeof data.result.response.token !== "string") {
+                continue;
+              }
+              let token = data.result.response.token;
+              let content = token;
+              if (isReasoning) {
+                if (thinking === 2) {
+                  thinking = 1;
+                  content = `<Thinking>\n${token}`;
+                } else if (thinking === 1 && !data.result.response.isThinking) {
+                  thinking = 0;
+                  content = `\n</Thinking>\n${token}`;
+                }
+              }
+              const chunkData = {
+                id: "chatcmpl-" + crypto.randomUUID(),
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model,
+                choices: [
+                  { index: 0, delta: { content: content }, finish_reason: null },
+                ],
+              };
+  
+              // 向客户端发送数据
+              res.write("data: " + JSON.stringify(chunkData) + "\n\n");
+              if (data.result.response.isSoftStop) {
+                const finalChunk = {
+                  id: "chatcmpl-" + crypto.randomUUID(),
+                  object: "chat.completion.chunk",
+                  created: Math.floor(Date.now() / 1000),
+                  model,
+                  choices: [
+                    { index: 0, delta: { content: content }, finish_reason: "completed" },
+                  ],
+                };
+                res.write("data: " + JSON.stringify(finalChunk) + "\n\n");
+                res.end();
+                return;
+              }
+            } catch (e) {
+              console.error("JSON 解析错误:", e, "行内容:", trimmed);
+            }
+          }
+        }
+      }
+  
+      pushStreamData();
+    } catch (e) {
+      console.error("处理sendMessageStream时出错:", e);
+      res.status(500).json({ error: "流错误" });
+    }
+}
+  
+  async function sendMessageNonStream(message, model, disableSearch, forceConcise, isReasoning, res) {
+    let cookie;
+    try {
+      cookie = await getNextAccount(model);
+    } catch (e) {
+      return res.status(500).json({ error: e.toString() });
+    }
+  
+    const headers = getCommonHeaders(cookie);
+    const config = await loadConfig();
+    const payload = {
+      temporary: config.temporary_mode,
+      modelName: model,
+      message,
+      fileAttachments: [],
+      imageAttachments: [],
+      disableSearch,
+      enableImageGeneration: false,
+      returnImageBytes: false,
+      returnRawGrokInXaiRequest: false,
+      enableImageStreaming: true,
+      imageGenerationCount: 2,
+      forceConcise,
+      toolOverrides: {},
+      enableSideBySide: true,
+      isPreset: false,
+      sendFinalMetadata: true,
+      customInstructions: "",
+      deepsearchPreset: "",
+      isReasoning
+    };
+    const init = {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    };
+  
+    try {
+      const response = await fetchWithTimeout(TARGET_URL, init);
+      if (!response.ok) {
+        return res.status(500).json({ error: "发送消息失败" });
+      }
+  
+      const fullText = await response.text();
+      let finalMessage = '';
+      const lines = fullText.split("\n").filter(line => line.trim() !== "");
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line);
+          if (data?.result?.response) {
+            if (data.result.response.modelResponse && data.result.response.modelResponse.message) {
+              finalMessage = data.result.response.modelResponse.message;
+              break;
+            } else if (typeof data.result.response.token === "string") {
+              finalMessage += data.result.response.token;
+            }
+          }
+        } catch (e) {
+          console.error("JSON 解析错误:", e, "行内容:", line);
+        }
+      }
+  
+      const openai_response = {
+        id: "chatcmpl-" + crypto.randomUUID(),
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [
+          { index: 0, message: { role: "assistant", content: finalMessage }, finish_reason: "completed" },
+        ],
+      };
+      res.json(openai_response);
+    } catch (e) {
+      console.error("处理sendMessageNonStream时出错:", e);
+      res.status(500).json({ error: "非流错误" });
+    }
+  }
 
 // 路由
 app.get('/', (req, res) => {
@@ -282,6 +583,7 @@ app.use((req, res) => {
 
 // 5. 启动服务器
 const port = process.env.PORT || 3000; // 使用环境变量 PORT 或默认端口 3000
+process.env.PASSWORD = "123456";
 const MODELS = ["grok-2", "grok-3", "grok-3-thinking"];
 const CHECK_URL = "https://grok.com/rest/rate-limits";
 const USER_AGENTS = [
